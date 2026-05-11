@@ -38,6 +38,7 @@ const Game: React.FC = () => {
   const [turn, setTurn] = useState<PawnState['color']>('red');
   const [diceValue, setDiceValue] = useState<number | null>(null);
   const [actionPhase, setActionPhase] = useState<'rolling' | 'moving'>('rolling');
+  const [extraRollActive, setExtraRollActive] = useState(false);
   const [pawns, setPawns] = useState<PawnState[]>([
     { id: 'r1', color: 'red', pos: null, base: { row: 2, col: 2 } },
     { id: 'r2', color: 'red', pos: null, base: { row: 2, col: 3 } },
@@ -79,7 +80,6 @@ const Game: React.FC = () => {
     if (!hasMove(value, turn)) {
       setTimeout(() => {
         // Dacă nu are mutări, trece rândul și resetăm aruncarea bonus
-        setExtraRollActive(false); 
         setTurn((t) => nextTurn(t));
         setDiceValue(null);
         setActionPhase('rolling');
@@ -90,7 +90,7 @@ const Game: React.FC = () => {
     // Dacă are mutări valide, așteptăm click pe pion
     setActionPhase('moving');
   };
-  const onPawnClick = (pawnId: string) => {
+ const onPawnClick = (pawnId: string) => {
     if (actionPhase !== 'moving' || diceValue === null) return;
 
     const clickedPawn = pawns.find((p) => p.id === pawnId);
@@ -111,19 +111,33 @@ const Game: React.FC = () => {
 
     if (!isMoveValid) return;
 
-    setPawns((prev) =>
-      prev.map((p) => (p.id === pawnId ? { ...p, pos: nextPos } : p))
-    );
+    // --- LOGICA NOUĂ: MÂNCATUL PIONILOR ---
+    setPawns((prev) => {
+      return prev.map((p) => {
+        // Dacă este pionul pe care abia l-am mutat, îi actualizăm poziția
+        if (p.id === pawnId) {
+          return { ...p, pos: nextPos };
+        }
+        // Dacă e un pion INAMIC și stătea exact pe căsuța unde am aterizat, îl trimitem acasă (pos: null)
+        if (p.color !== turn && p.pos === nextPos) {
+          return { ...p, pos: null };
+        }
+        // Restul pionilor rămân la fel
+        return p;
+      });
+    });
 
-    if (diceValue === 6) {
-      setActionPhase('rolling');
+    // Logica pentru extra aruncare la 6 rămâne la fel
+    if (diceValue === 6 && !extraRollActive) {
+      setExtraRollActive(true); 
       setDiceValue(null);
-      return;
+      setActionPhase('rolling');
+    } else {
+      setExtraRollActive(false); 
+      setTurn((t) => nextTurn(t));
+      setDiceValue(null);
+      setActionPhase('rolling');
     }
-
-    setTurn((t) => nextTurn(t));
-    setActionPhase('rolling');
-    setDiceValue(null);
   };
 
   const renderPawns = pawns.map((p) => {
