@@ -1,0 +1,106 @@
+import React from 'react';
+import Cell from './Cell';
+import Pawn from './Pawn';
+
+type PawnRender = {
+  id: string;
+  color: 'red' | 'green' | 'blue' | 'yellow';
+  row: number;
+  col: number;
+};
+
+type BoardProps = {
+  pawns: PawnRender[];
+  onPawnClick?: (pawnId: string) => void;
+};
+
+const Board: React.FC<BoardProps> = ({ pawns, onPawnClick }) => {
+  const gridSize = 15;
+  const cellSize = 40;
+
+  const isInRange = (v: number, min: number, max: number) => v >= min && v <= max;
+
+  const cellClass = (row: number, col: number) => {
+    // Center 3x3
+    if (isInRange(row, 6, 8) && isInRange(col, 6, 8)) {
+      return 'bg-gray-200';
+    }
+
+    // Bases (6x6) with inner 4x4 white
+    const inRedBase = isInRange(row, 0, 5) && isInRange(col, 0, 5);
+    const inGreenBase = isInRange(row, 0, 5) && isInRange(col, 9, 14);
+    const inBlueBase = isInRange(row, 9, 14) && isInRange(col, 0, 5);
+    const inYellowBase = isInRange(row, 9, 14) && isInRange(col, 9, 14);
+
+    if (inRedBase) {
+      const inner = isInRange(row, 1, 4) && isInRange(col, 1, 4);
+      return inner ? 'bg-white' : 'bg-red-500';
+    }
+    if (inGreenBase) {
+      const inner = isInRange(row, 1, 4) && isInRange(col, 10, 13);
+      return inner ? 'bg-white' : 'bg-green-500';
+    }
+    if (inBlueBase) {
+      const inner = isInRange(row, 10, 13) && isInRange(col, 1, 4);
+      return inner ? 'bg-white' : 'bg-blue-500';
+    }
+    if (inYellowBase) {
+      const inner = isInRange(row, 10, 13) && isInRange(col, 10, 13);
+      return inner ? 'bg-white' : 'bg-yellow-400';
+    }
+
+    // Home lanes
+    if (col === 7 && isInRange(row, 1, 5)) return 'bg-red-400';
+    if (row === 7 && isInRange(col, 9, 13)) return 'bg-green-400';
+    if (row === 7 && isInRange(col, 1, 5)) return 'bg-blue-400';
+    if (col === 7 && isInRange(row, 9, 13)) return 'bg-yellow-400';
+
+    // Main cross track (3-wide)
+    if (isInRange(row, 6, 8) || isInRange(col, 6, 8)) {
+      return 'bg-white';
+    }
+
+    return 'bg-gray-100';
+  };
+
+  const colorToClass = (color: PawnRender['color']) => {
+    if (color === 'red') return 'bg-red-600';
+    if (color === 'green') return 'bg-green-600';
+    if (color === 'blue') return 'bg-blue-600';
+    return 'bg-yellow-500';
+  };
+
+  const cells = Array.from({ length: gridSize * gridSize }, (_, index) => {
+    const row = Math.floor(index / gridSize);
+    const col = index % gridSize;
+    const inCell = pawns.filter((p) => p.row === row && p.col === col);
+
+    return (
+      <Cell key={`${row}-${col}`} className={cellClass(row, col)} size={cellSize}>
+        <div className="flex flex-wrap gap-1">
+          {inCell.map((p) => (
+            <Pawn
+              key={p.id}
+              colorClass={colorToClass(p.color)}
+              onClick={() => onPawnClick?.(p.id)}
+            />
+          ))}
+        </div>
+      </Cell>
+    );
+  });
+
+  return (
+    <div
+      className="grid gap-0"
+      style={{
+        gridTemplateColumns: `repeat(${gridSize}, ${cellSize}px)`,
+        width: gridSize * cellSize,
+      }}
+    >
+      {cells}
+    </div>
+  );
+};
+
+export default Board;
