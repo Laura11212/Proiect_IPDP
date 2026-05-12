@@ -51,6 +51,7 @@ const Game: React.FC = () => {
   const [diceValue, setDiceValue] = useState<number | null>(null);
   const [actionPhase, setActionPhase] = useState<'rolling' | 'moving'>('rolling');
   const [extraRollActive, setExtraRollActive] = useState(false);
+  const [winner, setWinner] = useState<PawnState['color'] | null>(null);
   const [pawns, setPawns] = useState<PawnState[]>([
     { id: 'r1', color: 'red', pos: null, base: { row: 2, col: 2 }, stepsWalked: 0 },
     { id: 'r2', color: 'red', pos: null, base: { row: 2, col: 3 }, stepsWalked: 0 },
@@ -83,6 +84,7 @@ const Game: React.FC = () => {
   };
 
   const onRoll = () => {
+    if (winner) return; // Dacă s-a terminat meciul, zarul se blochează definitiv!
     if (actionPhase !== 'rolling') return;
 
     const rollChance = Math.floor(Math.random() * 100) + 1;
@@ -145,27 +147,32 @@ const Game: React.FC = () => {
     // Aici, TypeScript știe deja că dacă am ajuns sub acest punct, 
     // nextPos și nextSteps AU PRIMIT o valoare de tip number.
     
-    // Lista cu indicii casutelor sigure (stelele)
+    // 1. Calculăm noua listă de pioni
     const safeSpaceIndices = [0, 8, 13, 21, 26, 34, 39, 47];
-
-    setPawns((prev) => {
-      const newPawns = prev.map((p) => {
-        if (p.id === pawnId) return { ...p, pos: nextPos, stepsWalked: nextSteps };
-
-        // Mancatul pionilor: verificam daca NU este pe un safe space
-        if (p.color !== turn && p.pos === nextPos && nextPos < 100) {
-          if (safeSpaceIndices.includes(nextPos)) {
-            return p; // Este pe o stea, este salvat. Raman amandoi pe casuta.
-          }
-          return { ...p, pos: null, stepsWalked: 0 }; // Nu e pe stea, este mancat.
-        }
-
-        return p;
-      });
-      return newPawns;
+    const newPawns = pawns.map((p) => {
+      if (p.id === pawnId) return { ...p, pos: nextPos, stepsWalked: nextSteps };
+      if (p.color !== turn && p.pos === nextPos && nextPos < 100) {
+        if (safeSpaceIndices.includes(nextPos)) return p;
+        return { ...p, pos: null, stepsWalked: 0 };
+      }
+      return p;
     });
 
-    // Final de tură
+    // 2. Salvăm noua listă de pioni
+    setPawns(newPawns);
+
+    // 3. VERIFICARE VICTORIE 🏆
+    // Ne uităm la pionii jucătorului curent
+    const playerPawns = newPawns.filter((p) => p.color === turn);
+    // Verificăm dacă toți au ajuns la 56 de pași
+    const hasWon = playerPawns.every((p) => p.stepsWalked === 56);
+
+    if (hasWon) {
+      setWinner(turn);
+      return; // Oprim funcția aici, jocul s-a terminat!
+    }
+
+    // 4. Logica normală de final de tură (dacă nu a câștigat)
     if (diceValue === 6 && !extraRollActive) {
       setExtraRollActive(true);
       setDiceValue(null);
@@ -203,7 +210,28 @@ const Game: React.FC = () => {
         <Dice value={diceValue || 0} onRoll={onRoll} disabled={actionPhase !== 'rolling'} />
         <div className="text-xs text-gray-500">Phase: {actionPhase}</div>
       </div>
-      <Board pawns={renderPawns} onPawnClick={onPawnClick} />
+      <div className="relative">
+        {/* Dacă există un câștigător, afișăm acest mesaj */}
+        {winner && (
+          <div className="absolute z-50 bg-black/80 inset-0 flex flex-col items-center justify-center rounded-lg">
+            <h1
+              className="text-6xl font-bold uppercase text-white mb-4 drop-shadow-lg"
+              style={{ color: winner }}
+            >
+              {winner} WINS!
+            </h1>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-6 py-3 bg-white text-gray-900 font-bold rounded-full hover:bg-gray-200 transition-colors"
+            >
+              Joacă din nou
+            </button>
+          </div>
+        )}
+
+        {/* Aici ai tu deja componenta Board */}
+        <Board pawns={renderPawns} onPawnClick={onPawnClick} />
+      </div>
     </div>
   );
 };

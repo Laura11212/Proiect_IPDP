@@ -67,10 +67,10 @@ const Board: React.FC<BoardProps> = ({ pawns, onPawnClick }) => {
     }
 
     // Home lanes
-    if (col === 7 && isInRange(row, 1, 5)) return 'bg-red-400';
-    if (row === 7 && isInRange(col, 9, 13)) return 'bg-green-400';
-    if (row === 7 && isInRange(col, 1, 5)) return 'bg-blue-400';
-    if (col === 7 && isInRange(row, 9, 13)) return 'bg-yellow-400';
+    if (row === 7 && isInRange(col, 1, 5)) return 'bg-red-400';
+    if (col === 7 && isInRange(row, 1, 5)) return 'bg-green-400';
+    if (row === 7 && isInRange(col, 9, 13)) return 'bg-yellow-400';
+    if (col === 7 && isInRange(row, 9, 13)) return 'bg-blue-400';
 
     // Main cross track (3-wide)
     if (isInRange(row, 6, 8) || isInRange(col, 6, 8)) {
