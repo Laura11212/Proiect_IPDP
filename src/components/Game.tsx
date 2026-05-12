@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Board from './Board';
+import { socket } from '../socket';
 import Dice from './Dice';
 
 type PawnState = {
@@ -71,6 +72,30 @@ const Game: React.FC = () => {
     { id: 'y4', color: 'yellow', pos: null, base: { row: 12, col: 12 }, stepsWalked: 0 },
   ]);
 
+
+  useEffect(() => {
+    socket.on('connect', () => {
+      console.log('Suntem conectați la server cu ID-ul:', socket.id);
+    });
+
+    socket.on('updateBoard', (data) => {
+      console.log('Am primit o mutare de la adversar:', data);
+
+      // Actualizăm tabla și jocul cu datele primite!
+      if (data.pawns !== undefined) setPawns(data.pawns);
+      if (data.turn !== undefined) setTurn(data.turn);
+      if (data.diceValue !== undefined) setDiceValue(data.diceValue);
+      if (data.actionPhase !== undefined) setActionPhase(data.actionPhase);
+      if (data.extraRollActive !== undefined) setExtraRollActive(data.extraRollActive);
+      if (data.winner !== undefined) setWinner(data.winner);
+    });
+
+    return () => {
+      socket.off('connect');
+      socket.off('updateBoard');
+    };
+  }, []);
+
   const hasMove = (value: number, color: PawnState['color']) => {
     const possibleMoves = pawns.filter((p) => {
       if (p.color !== color) return false;
@@ -84,7 +109,7 @@ const Game: React.FC = () => {
   };
 
   const onRoll = () => {
-    if (winner) return; // Dacă s-a terminat meciul, zarul se blochează definitiv!
+    if (winner) return; 
     if (actionPhase !== 'rolling') return;
 
     const rollChance = Math.floor(Math.random() * 100) + 1;
@@ -94,19 +119,27 @@ const Game: React.FC = () => {
 
     if (!hasMove(value, turn)) {
       console.log('Nu am mutări! Trecem la următorul...');
-      // Forțăm faza de moving scurt ca să blocăm zarul vizual
       setActionPhase('moving');
 
+      // 🔴 NOU: Trimitem zarul adversarului (chiar dacă nu putem muta)
+      socket.emit('makeMove', { diceValue: value, actionPhase: 'moving' });
+
       setTimeout(() => {
-        setTurn((t) => nextTurn(t));
+        const nextT = nextTurn(turn);
+        setTurn(nextT);
         setDiceValue(null);
         setActionPhase('rolling');
+        
+        // 🔴 NOU: Trimitem faptul că s-a schimbat tura
+        socket.emit('makeMove', { turn: nextT, diceValue: null, actionPhase: 'rolling' });
       }, 1000);
       return;
     }
 
-    // Doar dacă are mutări trecem în faza de moving propriu-zisă
     setActionPhase('moving');
+    
+    // 🔴 NOU: Trimitem zarul și trecem la mutare
+    socket.emit('makeMove', { diceValue: value, actionPhase: 'moving' });
   };
   const onPawnClick = (pawnId: string) => {
     if (actionPhase !== 'moving' || diceValue === null) return;
@@ -162,27 +195,40 @@ const Game: React.FC = () => {
     setPawns(newPawns);
 
     // 3. VERIFICARE VICTORIE 🏆
-    // Ne uităm la pionii jucătorului curent
     const playerPawns = newPawns.filter((p) => p.color === turn);
-    // Verificăm dacă toți au ajuns la 56 de pași
     const hasWon = playerPawns.every((p) => p.stepsWalked === 56);
 
     if (hasWon) {
       setWinner(turn);
-      return; // Oprim funcția aici, jocul s-a terminat!
+      // 🔴 NOU: Trimitem tabla finală și câștigătorul!
+      socket.emit('makeMove', { pawns: newPawns, winner: turn });
+      return; 
     }
 
-    // 4. Logica normală de final de tură (dacă nu a câștigat)
+    // 4. Logica normală de final de tură
+    let nextT = turn;
+    let nextExtraRoll = extraRollActive;
+
     if (diceValue === 6 && !extraRollActive) {
-      setExtraRollActive(true);
-      setDiceValue(null);
-      setActionPhase('rolling');
+      nextExtraRoll = true;
     } else {
-      setExtraRollActive(false);
-      setTurn((t) => nextTurn(t));
-      setDiceValue(null);
-      setActionPhase('rolling');
+      nextExtraRoll = false;
+      nextT = nextTurn(turn);
     }
+
+    setExtraRollActive(nextExtraRoll);
+    setTurn(nextT);
+    setDiceValue(null);
+    setActionPhase('rolling');
+
+    // 🔴 NOU: Trimitem toată situația pionilor și a turei către server!
+    socket.emit('makeMove', {
+      pawns: newPawns,
+      turn: nextT,
+      diceValue: null,
+      actionPhase: 'rolling',
+      extraRollActive: nextExtraRoll
+    });
   };
 
   const renderPawns = pawns.map((p) => {
