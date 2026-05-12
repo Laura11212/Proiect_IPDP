@@ -14,6 +14,23 @@ type BoardProps = {
   onPawnClick?: (pawnId: string) => void;
 };
 
+const safeStarMap: Record<string, string> = {
+  '6-1': 'text-red-500',
+  '1-8': 'text-green-500',
+  '8-13': 'text-yellow-500',
+  '13-6': 'text-blue-500',
+  '2-6': 'text-gray-400',
+  '6-12': 'text-gray-400',
+  '12-8': 'text-gray-400',
+  '8-2': 'text-gray-400',
+};
+
+const Star = ({ colorClass }: { colorClass: string }) => (
+  <svg className={`w-3/4 h-3/4 opacity-80 ${colorClass}`} viewBox="0 0 24 24" fill="currentColor">
+    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+  </svg>
+);
+
 const Board: React.FC<BoardProps> = ({ pawns, onPawnClick }) => {
   const gridSize = 15;
   const cellSize = 40;
@@ -74,17 +91,25 @@ const Board: React.FC<BoardProps> = ({ pawns, onPawnClick }) => {
     const row = Math.floor(index / gridSize);
     const col = index % gridSize;
     const inCell = pawns.filter((p) => p.row === row && p.col === col);
+    const starClass = safeStarMap[`${row}-${col}`];
 
     return (
       <Cell key={`${row}-${col}`} className={cellClass(row, col)} size={cellSize}>
-        <div className="flex flex-wrap gap-1">
-          {inCell.map((p) => (
-            <Pawn
-              key={p.id}
-              colorClass={colorToClass(p.color)}
-              onClick={() => onPawnClick?.(p.id)}
-            />
-          ))}
+        <div className="relative w-full h-full flex items-center justify-center">
+          {starClass && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <Star colorClass={starClass} />
+            </div>
+          )}
+          <div className="relative z-10 flex flex-wrap gap-1">
+            {inCell.map((p) => (
+              <Pawn
+                key={p.id}
+                colorClass={colorToClass(p.color)}
+                onClick={() => onPawnClick?.(p.id)}
+              />
+            ))}
+          </div>
         </div>
       </Cell>
     );

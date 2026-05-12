@@ -7,6 +7,7 @@ type PawnState = {
   color: 'red' | 'green' | 'blue' | 'yellow';
   pos: number | null;
   base: { row: number; col: number };
+  stepsWalked: number; 
 };
 
 const track = [
@@ -24,11 +25,22 @@ const track = [
   { row: 8, col: 0 }, { row: 7, col: 0 }, { row: 6, col: 0 },
 ];
 
+const homeLanes: Record<PawnState['color'], { row: number; col: number }[]> = {
+  // Brațul din STÂNGA (Roșu)
+  red:    [{ row: 7, col: 1 }, { row: 7, col: 2 }, { row: 7, col: 3 }, { row: 7, col: 4 }, { row: 7, col: 5 }, { row: 7, col: 6 }],
+  // Brațul de SUS (Verde)
+  green:  [{ row: 1, col: 7 }, { row: 2, col: 7 }, { row: 3, col: 7 }, { row: 4, col: 7 }, { row: 5, col: 7 }, { row: 6, col: 7 }],
+  // Brațul din DREAPTA (Galben)
+  yellow: [{ row: 7, col: 13 }, { row: 7, col: 12 }, { row: 7, col: 11 }, { row: 7, col: 10 }, { row: 7, col: 9 }, { row: 7, col: 8 }],
+  // Brațul de JOS (Albastru)
+  blue:   [{ row: 13, col: 7 }, { row: 12, col: 7 }, { row: 11, col: 7 }, { row: 10, col: 7 }, { row: 9, col: 7 }, { row: 8, col: 7 }],
+};
+
 const startIndex: Record<PawnState['color'], number> = {
-  red: 0,
-  green: 13,
-  yellow: 26,
-  blue: 39,
+  red: 0,     // Iese la stânga (lângă casa roșie)
+  green: 13,  // Iese sus (lângă casa verde)
+  yellow: 26, // Iese la dreapta (lângă casa galbenă)
+  blue: 39,   // Iese jos (lângă casa albastră)
 };
 
 const nextTurn = (t: PawnState['color']) =>
@@ -40,100 +52,126 @@ const Game: React.FC = () => {
   const [actionPhase, setActionPhase] = useState<'rolling' | 'moving'>('rolling');
   const [extraRollActive, setExtraRollActive] = useState(false);
   const [pawns, setPawns] = useState<PawnState[]>([
-    { id: 'r1', color: 'red', pos: null, base: { row: 2, col: 2 } },
-    { id: 'r2', color: 'red', pos: null, base: { row: 2, col: 3 } },
-    { id: 'r3', color: 'red', pos: null, base: { row: 3, col: 2 } },
-    { id: 'r4', color: 'red', pos: null, base: { row: 3, col: 3 } },
-    { id: 'g1', color: 'green', pos: null, base: { row: 2, col: 11 } },
-    { id: 'g2', color: 'green', pos: null, base: { row: 2, col: 12 } },
-    { id: 'g3', color: 'green', pos: null, base: { row: 3, col: 11 } },
-    { id: 'g4', color: 'green', pos: null, base: { row: 3, col: 12 } },
-    { id: 'b1', color: 'blue', pos: null, base: { row: 11, col: 2 } },
-    { id: 'b2', color: 'blue', pos: null, base: { row: 11, col: 3 } },
-    { id: 'b3', color: 'blue', pos: null, base: { row: 12, col: 2 } },
-    { id: 'b4', color: 'blue', pos: null, base: { row: 12, col: 3 } },
-    { id: 'y1', color: 'yellow', pos: null, base: { row: 11, col: 11 } },
-    { id: 'y2', color: 'yellow', pos: null, base: { row: 11, col: 12 } },
-    { id: 'y3', color: 'yellow', pos: null, base: { row: 12, col: 11 } },
-    { id: 'y4', color: 'yellow', pos: null, base: { row: 12, col: 12 } },
+    { id: 'r1', color: 'red', pos: null, base: { row: 2, col: 2 }, stepsWalked: 0 },
+    { id: 'r2', color: 'red', pos: null, base: { row: 2, col: 3 }, stepsWalked: 0 },
+    { id: 'r3', color: 'red', pos: null, base: { row: 3, col: 2 }, stepsWalked: 0 },
+    { id: 'r4', color: 'red', pos: null, base: { row: 3, col: 3 }, stepsWalked: 0 },
+    { id: 'g1', color: 'green', pos: null, base: { row: 2, col: 11 }, stepsWalked: 0 },
+    { id: 'g2', color: 'green', pos: null, base: { row: 2, col: 12 }, stepsWalked: 0 },
+    { id: 'g3', color: 'green', pos: null, base: { row: 3, col: 11 }, stepsWalked: 0 },
+    { id: 'g4', color: 'green', pos: null, base: { row: 3, col: 12 }, stepsWalked: 0 },
+    { id: 'b1', color: 'blue', pos: null, base: { row: 11, col: 2 }, stepsWalked: 0 },
+    { id: 'b2', color: 'blue', pos: null, base: { row: 11, col: 3 }, stepsWalked: 0 },
+    { id: 'b3', color: 'blue', pos: null, base: { row: 12, col: 2 }, stepsWalked: 0 },
+    { id: 'b4', color: 'blue', pos: null, base: { row: 12, col: 3 }, stepsWalked: 0 },
+    { id: 'y1', color: 'yellow', pos: null, base: { row: 11, col: 11 }, stepsWalked: 0 },
+    { id: 'y2', color: 'yellow', pos: null, base: { row: 11, col: 12 }, stepsWalked: 0 },
+    { id: 'y3', color: 'yellow', pos: null, base: { row: 12, col: 11 }, stepsWalked: 0 },
+    { id: 'y4', color: 'yellow', pos: null, base: { row: 12, col: 12 }, stepsWalked: 0 },
   ]);
 
-  const hasMove = (value: number, color: PawnState['color']) =>
-    pawns.some((p) => p.color === color && (p.pos !== null || value === 6));
+  const hasMove = (value: number, color: PawnState['color']) => {
+    const possibleMoves = pawns.filter((p) => {
+      if (p.color !== color) return false;
+      if (p.pos === null) return value === 6;
+      // Verificăm exact condiția de mișcare:
+      return p.stepsWalked + value <= 56;
+    });
+
+    console.log(`[Debug] Jucător: ${color}, Zar: ${value}, Mutări posibile: ${possibleMoves.length}`);
+    return possibleMoves.length > 0;
+  };
 
   const onRoll = () => {
     if (actionPhase !== 'rolling') return;
 
-    // Generăm un număr de la 1 la 100 pentru a aplica șansa de 30%
     const rollChance = Math.floor(Math.random() * 100) + 1;
-    let value;
+    let value = rollChance <= 30 ? 6 : Math.floor(Math.random() * 5) + 1;
 
-    if (rollChance <= 30) {
-      value = 6; // 30% șanse să pice 6
-    } else {
-      value = Math.floor(Math.random() * 5) + 1; // 70% șanse să pice 1, 2, 3, 4 sau 5
-    }
-    
     setDiceValue(value);
 
-    // Verificăm dacă jucătorul are ce să mute cu zarul picat
     if (!hasMove(value, turn)) {
+      console.log('Nu am mutări! Trecem la următorul...');
+      // Forțăm faza de moving scurt ca să blocăm zarul vizual
+      setActionPhase('moving');
+
       setTimeout(() => {
-        // Dacă nu are mutări, trece rândul și resetăm aruncarea bonus
         setTurn((t) => nextTurn(t));
         setDiceValue(null);
         setActionPhase('rolling');
-      }, 800);
+      }, 1000);
       return;
     }
 
-    // Dacă are mutări valide, așteptăm click pe pion
+    // Doar dacă are mutări trecem în faza de moving propriu-zisă
     setActionPhase('moving');
   };
- const onPawnClick = (pawnId: string) => {
+  const onPawnClick = (pawnId: string) => {
     if (actionPhase !== 'moving' || diceValue === null) return;
 
     const clickedPawn = pawns.find((p) => p.id === pawnId);
     if (!clickedPawn || clickedPawn.color !== turn) return;
 
-    let isMoveValid = false;
-    let nextPos = clickedPawn.pos;
+    // 1. Declarăm variabilele fără să le dăm o valoare inițială obligatorie
+    let nextPos: number;
+    let nextSteps: number;
+    let canMove = false;
 
     if (clickedPawn.pos === null) {
       if (diceValue === 6) {
-        isMoveValid = true;
+        canMove = true;
         nextPos = startIndex[clickedPawn.color];
+        nextSteps = 0;
+      } else {
+        return; // Nu poate ieși din casă dacă nu e 6
       }
     } else {
-      isMoveValid = true;
-      nextPos = (clickedPawn.pos + diceValue) % track.length;
+      const totalStepsAfterMove = clickedPawn.stepsWalked + diceValue;
+
+      if (totalStepsAfterMove <= 56) {
+        canMove = true;
+        nextSteps = totalStepsAfterMove;
+
+        if (totalStepsAfterMove <= 50) {
+          nextPos = (clickedPawn.pos + diceValue) % track.length;
+        } else {
+          nextPos = 100 + (totalStepsAfterMove - 51);
+        }
+      } else {
+        return; // Zarul e prea mare pentru a intra în casă
+      }
     }
 
-    if (!isMoveValid) return;
+    // Aici, TypeScript știe deja că dacă am ajuns sub acest punct, 
+    // nextPos și nextSteps AU PRIMIT o valoare de tip number.
+    
+    // Lista cu indicii casutelor sigure (stelele)
+    const safeSpaceIndices = [0, 8, 13, 21, 26, 34, 39, 47];
 
-    // --- LOGICA NOUĂ: MÂNCATUL PIONILOR ---
     setPawns((prev) => {
-      return prev.map((p) => {
-        // Dacă este pionul pe care abia l-am mutat, îi actualizăm poziția
-        if (p.id === pawnId) {
-          return { ...p, pos: nextPos };
+      const newPawns = prev.map((p) => {
+        if (p.id === pawnId) return { ...p, pos: nextPos, stepsWalked: nextSteps };
+
+        // Mancatul pionilor: verificam daca NU este pe un safe space
+        if (p.color !== turn && p.pos === nextPos && nextPos < 100) {
+          if (safeSpaceIndices.includes(nextPos)) {
+            return p; // Este pe o stea, este salvat. Raman amandoi pe casuta.
+          }
+          return { ...p, pos: null, stepsWalked: 0 }; // Nu e pe stea, este mancat.
         }
-        // Dacă e un pion INAMIC și stătea exact pe căsuța unde am aterizat, îl trimitem acasă (pos: null)
-        if (p.color !== turn && p.pos === nextPos) {
-          return { ...p, pos: null };
-        }
-        // Restul pionilor rămân la fel
+
         return p;
       });
+      return newPawns;
     });
 
-    // Logica pentru extra aruncare la 6 rămâne la fel
+    // Final de tură
     if (diceValue === 6 && !extraRollActive) {
-      setExtraRollActive(true); 
+      setExtraRollActive(true);
       setDiceValue(null);
       setActionPhase('rolling');
     } else {
-      setExtraRollActive(false); 
+      setExtraRollActive(false);
       setTurn((t) => nextTurn(t));
       setDiceValue(null);
       setActionPhase('rolling');
@@ -144,6 +182,15 @@ const Game: React.FC = () => {
     if (p.pos === null) {
       return { id: p.id, color: p.color, row: p.base.row, col: p.base.col };
     }
+
+    if (p.pos >= 100) {
+      // Dacă e în casă, luăm coordonatele din homeLanes
+      const homeIndex = p.pos - 100;
+      const cell = homeLanes[p.color][homeIndex];
+      return { id: p.id, color: p.color, row: cell.row, col: cell.col };
+    }
+
+    // Altfel, luăm de pe traseul normal
     const cell = track[p.pos];
     return { id: p.id, color: p.color, row: cell.row, col: cell.col };
   });
