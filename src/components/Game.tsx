@@ -161,14 +161,18 @@ const Game: React.FC<GameProps> = ({ roomCode }) => {
 
 useEffect(() => {
   setVisualPawns(pawns);
-}, []);
+}, [pawns]);
 
 
   const passTurnToNext = (currentTurnColor: string) => {
     const defaultOrder = ['red', 'green', 'yellow', 'blue'];
-    const currentlyPlaying = defaultOrder.filter((color) => activeColors.includes(color));
+    let currentlyPlaying = defaultOrder.filter((color) => activeColors.includes(color));
 
-    if (currentlyPlaying.length === 0) return;
+    // 🛡️ PLASA DE SIGURANȚĂ: Dacă serverul nu ne-a zis cine e în cameră,
+    // presupunem automat că joacă Roșu și Verde ca să nu blocăm jocul!
+    if (currentlyPlaying.length === 0) {
+      currentlyPlaying = ['red', 'green'];
+    }
 
     const currentIndex = currentlyPlaying.indexOf(currentTurnColor);
     const nextColor = currentlyPlaying[(currentIndex + 1) % currentlyPlaying.length];
