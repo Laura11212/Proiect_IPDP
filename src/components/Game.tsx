@@ -13,6 +13,10 @@ type PawnState = {
   stepsWalked: number; 
 };
 
+type GameProps = {
+  roomCode: string;
+};
+
 const track = [
   { row: 6, col: 1 }, { row: 6, col: 2 }, { row: 6, col: 3 }, { row: 6, col: 4 }, { row: 6, col: 5 },
   { row: 5, col: 6 }, { row: 4, col: 6 }, { row: 3, col: 6 }, { row: 2, col: 6 }, { row: 1, col: 6 },
@@ -46,7 +50,7 @@ const startIndex: Record<PawnState['color'], number> = {
   blue: 39,   // Iese jos (lângă casa albastră)
 };
 
-const Game: React.FC = () => {
+const Game: React.FC<GameProps> = ({ roomCode }) => {
   const [turn, setTurn] = useState<PawnState['color']>('red');
   const [diceValue, setDiceValue] = useState<number | null>(null);
   const [actionPhase, setActionPhase] = useState<'rolling' | 'moving'>('rolling');
@@ -72,7 +76,13 @@ const Game: React.FC = () => {
     { id: 'y3', color: 'yellow', pos: null, base: { row: 12, col: 11 }, stepsWalked: 0 },
     { id: 'y4', color: 'yellow', pos: null, base: { row: 12, col: 12 }, stepsWalked: 0 },
   ]);
+  const [visualPawns, setVisualPawns] = useState<PawnState[]>([]); // ← ADAUGĂ
+  const [isAnimating, setIsAnimating] = useState(false); 
 
+
+  useEffect(() => {
+    socket.emit('joinRoom', roomCode);
+  }, [roomCode]);
 
   useEffect(() => {
     socket.on('connect', () => {
@@ -138,7 +148,7 @@ const Game: React.FC = () => {
 
     const timer = setTimeout(() => {
       console.log("2. Cererea a fost trimisă");
-      socket.emit('requestColor');
+      socket.emit('requestColor', { roomCode });
     }, 200);
 
     return () => {
@@ -148,11 +158,21 @@ const Game: React.FC = () => {
     };
   }, []);
 
+
+useEffect(() => {
+  setVisualPawns(pawns);
+}, [pawns]);
+
+
   const passTurnToNext = (currentTurnColor: string) => {
     const defaultOrder = ['red', 'green', 'yellow', 'blue'];
-    const currentlyPlaying = defaultOrder.filter((color) => activeColors.includes(color));
+    let currentlyPlaying = defaultOrder.filter((color) => activeColors.includes(color));
 
-    if (currentlyPlaying.length === 0) return;
+    // 🛡️ PLASA DE SIGURANȚĂ: Dacă serverul nu ne-a zis cine e în cameră,
+    // presupunem automat că joacă Roșu și Verde ca să nu blocăm jocul!
+    if (currentlyPlaying.length === 0) {
+      currentlyPlaying = ['red', 'green'];
+    }
 
     const currentIndex = currentlyPlaying.indexOf(currentTurnColor);
     const nextColor = currentlyPlaying[(currentIndex + 1) % currentlyPlaying.length];
@@ -172,7 +192,37 @@ const Game: React.FC = () => {
     console.log(`[Debug] Jucător: ${color}, Zar: ${value}, Mutări posibile: ${possibleMoves.length}`);
     return possibleMoves.length > 0;
   };
+const animateSteps = async (
+  pawnId: string,
+  fromPos: number | null,
+  toPos: number,        // poziția finală pe track (index 0-51)
+  totalSteps: number,
+  color: PlayerColor
+): Promise<void> => {
+  setIsAnimating(true);
+  const STEP_DELAY = 180; // ms între fiecare casută
 
+  if (fromPos === null) {
+    // Pionul iese din bază direct la startIndex — un singur pas
+    setVisualPawns(prev =>
+      prev.map(p => p.id === pawnId ? { ...p, pos: startIndex[color] } : p)
+    );
+    await new Promise(res => setTimeout(res, STEP_DELAY));
+  } else {
+    // Mergem pas cu pas pe track
+    for (let step = 1; step <= totalSteps; step++) {
+      const intermediatePos = (fromPos + step) % track.length;
+
+      setVisualPawns(prev =>
+        prev.map(p => p.id === pawnId ? { ...p, pos: intermediatePos } : p)
+      );
+
+      await new Promise(res => setTimeout(res, STEP_DELAY));
+    }
+  }
+
+  setIsAnimating(false);
+};
   const onRoll = () => {
     if (winner) return; 
     if (actionPhase !== 'rolling') return;
@@ -187,7 +237,7 @@ const Game: React.FC = () => {
       setActionPhase('moving');
 
       // 🔴 NOU: Trimitem zarul adversarului (chiar dacă nu putem muta)
-      socket.emit('makeMove', { diceValue: value, actionPhase: 'moving', color: myColor });
+      socket.emit('makeMove', { diceValue: value, actionPhase: 'moving', color: myColor, roomCode });
 
       setTimeout(() => {
         const nextT = passTurnToNext(turn) ?? turn;
@@ -195,7 +245,7 @@ const Game: React.FC = () => {
         setActionPhase('rolling');
         
         // 🔴 NOU: Trimitem faptul că s-a schimbat tura
-        socket.emit('makeMove', { turn: nextT, diceValue: null, actionPhase: 'rolling', color: myColor });
+        socket.emit('makeMove', { turn: nextT, diceValue: null, actionPhase: 'rolling', color: myColor, roomCode });
       }, 1000);
       return;
     }
@@ -203,69 +253,68 @@ const Game: React.FC = () => {
     setActionPhase('moving');
     
     // 🔴 NOU: Trimitem zarul și trecem la mutare
-    socket.emit('makeMove', { diceValue: value, actionPhase: 'moving', color: myColor });
+    socket.emit('makeMove', { diceValue: value, actionPhase: 'moving', color: myColor, roomCode });
   };
-  const onPawnClick = (pawnId: string) => {
-    if (actionPhase !== 'moving' || diceValue === null) return;
+ const onPawnClick = async (pawnId: string) => {
+  if (isAnimating) return; // ← BLOCHEAZĂ click în timpul animației
+  if (actionPhase !== 'moving' || diceValue === null) return;
 
-    const clickedPawn = pawns.find((p) => p.id === pawnId);
-    if (!clickedPawn) return;
-    if (clickedPawn.color !== myColor) {
-      console.log("Nu e pionul tău!");
-      return;
-    }
-    if (turn !== myColor) {
-      console.log("Așteaptă-ți rândul!");
-      return;
-    }
-    if (clickedPawn.color !== turn) return;
+  const clickedPawn = pawns.find((p) => p.id === pawnId);
+  if (!clickedPawn) return;
+  if (clickedPawn.color !== myColor) return;
+  if (turn !== myColor) return;
+  if (clickedPawn.color !== turn) return;
 
-    // 1. Declarăm variabilele fără să le dăm o valoare inițială obligatorie
-    let nextPos: number;
-    let nextSteps: number;
-    let canMove = false;
+  let nextPos: number;
+  let nextSteps: number;
 
-    if (clickedPawn.pos === null) {
-      if (diceValue === 6) {
-        canMove = true;
-        nextPos = startIndex[clickedPawn.color];
-        nextSteps = 0;
-      } else {
-        return; // Nu poate ieși din casă dacă nu e 6
-      }
+  if (clickedPawn.pos === null) {
+    if (diceValue === 6) {
+      nextPos = startIndex[clickedPawn.color];
+      nextSteps = 0;
     } else {
-      const totalStepsAfterMove = clickedPawn.stepsWalked + diceValue;
-
-      if (totalStepsAfterMove <= 56) {
-        canMove = true;
-        nextSteps = totalStepsAfterMove;
-
-        if (totalStepsAfterMove <= 50) {
-          nextPos = (clickedPawn.pos + diceValue) % track.length;
-        } else {
-          nextPos = 100 + (totalStepsAfterMove - 51);
-        }
-      } else {
-        return; // Zarul e prea mare pentru a intra în casă
-      }
+      return;
     }
+  } else {
+    const totalStepsAfterMove = clickedPawn.stepsWalked + diceValue;
+    if (totalStepsAfterMove <= 56) {
+      nextSteps = totalStepsAfterMove;
+      nextPos = totalStepsAfterMove <= 50
+        ? (clickedPawn.pos + diceValue) % track.length
+        : 100 + (totalStepsAfterMove - 51);
+    } else {
+      return;
+    }
+  }
+
+  // ↓ ANIMEAZĂ MAI ÎNTÂI (vizual, pas cu pas)
+  await animateSteps(
+    pawnId,
+    clickedPawn.pos,
+    nextPos,
+    diceValue,
+    clickedPawn.color
+  );
+
+  // ↓ ABIA ACUM actualizezi starea reală
+  const safeSpaceIndices = [0, 8, 13, 21, 26, 34, 39, 47];
+  const newPawns = pawns.map((p) => {
+    if (p.id === pawnId) return { ...p, pos: nextPos, stepsWalked: nextSteps };
+    if (p.color !== turn && p.pos === nextPos && nextPos < 100) {
+      if (safeSpaceIndices.includes(nextPos)) return p;
+      return { ...p, pos: null, stepsWalked: 0 };
+    }
+    return p;
+  });
+
+  setPawns(newPawns);
+  setVisualPawns(newPawns);
 
     // Aici, TypeScript știe deja că dacă am ajuns sub acest punct, 
     // nextPos și nextSteps AU PRIMIT o valoare de tip number.
     
     // 1. Calculăm noua listă de pioni
-    const safeSpaceIndices = [0, 8, 13, 21, 26, 34, 39, 47];
-    const newPawns = pawns.map((p) => {
-      if (p.id === pawnId) return { ...p, pos: nextPos, stepsWalked: nextSteps };
-      if (p.color !== turn && p.pos === nextPos && nextPos < 100) {
-        if (safeSpaceIndices.includes(nextPos)) return p;
-        return { ...p, pos: null, stepsWalked: 0 };
-      }
-      return p;
-    });
-
-    // 2. Salvăm noua listă de pioni
-    setPawns(newPawns);
+    
 
     // 3. VERIFICARE VICTORIE 🏆
     const playerPawns = newPawns.filter((p) => p.color === turn);
@@ -274,7 +323,7 @@ const Game: React.FC = () => {
     if (hasWon) {
       setWinner(turn);
       // 🔴 NOU: Trimitem tabla finală și câștigătorul!
-      socket.emit('makeMove', { pawns: newPawns, winner: turn, color: myColor });
+      socket.emit('makeMove', { pawns: newPawns, winner: turn, color: myColor, roomCode });
       return; 
     }
 
@@ -312,14 +361,16 @@ const Game: React.FC = () => {
       diceValue: null,
       actionPhase: 'rolling',
       extraRollActive: nextExtraRoll,
-      color: myColor
+      color: myColor,
+      roomCode
     });
   };
 
-  const renderPawns = pawns.map((p) => {
-    if (p.pos === null) {
-      return { id: p.id, color: p.color, row: p.base.row, col: p.base.col };
-    }
+ const renderPawns = visualPawns.map((p) => { // ← visualPawns, nu pawns
+  if (p.pos === null) {
+    return { id: p.id, color: p.color, row: p.base.row, col: p.base.col };
+  }
+  
 
     if (p.pos >= 100) {
       // Dacă e în casă, luăm coordonatele din homeLanes
@@ -340,6 +391,9 @@ const Game: React.FC = () => {
         {/* Folosim || în loc de ?? pentru ca null să fie 0 curat */}
         <Dice value={diceValue || 0} onRoll={onRoll} disabled={turn !== myColor} />
         <div className="text-xs text-gray-500">Phase: {actionPhase}</div>
+      </div>
+      <div className="text-sm text-gray-700">
+        Codul camerei tale este: <span className="font-semibold">{roomCode}</span>
       </div>
       <h3>
         Ești jucătorul: <span style={{ color: myColor ?? undefined }}>{myColor?.toUpperCase()}</span>
