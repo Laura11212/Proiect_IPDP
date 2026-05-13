@@ -282,9 +282,21 @@ const Game: React.FC = () => {
     let nextT = turn;
     let nextExtraRoll = extraRollActive;
 
-    if (diceValue === 6 && !extraRollActive) {
+    // 🔴 NOU: Verificăm dacă pionul care tocmai a mutat a ajuns la pasul 56 (în casă)
+    const hasEnteredHome = nextSteps === 56;
+
+    if (hasEnteredHome) {
+      console.log("Pionul a intrat în casă! Primești o mutare extra!");
+      // 1. Îi dăm un extra roll
+      nextExtraRoll = true; 
+      // 2. Tura (nextT) rămâne a ta (nu apelăm passTurnToNext)
+    } 
+    else if (diceValue === 6 && !extraRollActive) {
+      // Dacă a dat 6 normal, tot primește mutare extra
       nextExtraRoll = true;
-    } else {
+    } 
+    else {
+      // Dacă e o mutare normală, rândul trece mai departe
       nextExtraRoll = false;
       nextT = passTurnToNext(turn) ?? turn;
     }
