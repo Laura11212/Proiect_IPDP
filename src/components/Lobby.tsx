@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 
 type LobbyProps = {
-  onEnterRoom: (code: string) => void;
+  onEnterRoom: (code: string, name: string) => void;
 };
 
 const Lobby: React.FC<LobbyProps> = ({ onEnterRoom }) => {
+  const [playerName, setPlayerName] = useState('');
   const [inputValue, setInputValue] = useState('');
 
   const generateCode = () => {
@@ -17,19 +18,29 @@ const Lobby: React.FC<LobbyProps> = ({ onEnterRoom }) => {
   };
 
   const handleCreate = () => {
+    const trimmedName = playerName.trim();
+    if (!trimmedName) return;
     const code = generateCode();
-    onEnterRoom(code);
+    onEnterRoom(code, trimmedName);
   };
 
   const handleJoin = () => {
     const trimmed = inputValue.trim();
-    if (!trimmed) return;
-    onEnterRoom(trimmed);
+    const trimmedName = playerName.trim();
+    if (!trimmed || !trimmedName) return;
+    onEnterRoom(trimmed, trimmedName);
   };
 
   return (
     <div className="flex flex-col items-center gap-4 bg-white p-8 rounded-lg shadow-md w-full max-w-sm">
       <h1 className="text-3xl font-bold">Ludo</h1>
+      <input
+        type="text"
+        value={playerName}
+        onChange={(event) => setPlayerName(event.target.value)}
+        placeholder="Introdu numele tău..."
+        className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
       <button
         type="button"
         onClick={handleCreate}

@@ -4,14 +4,20 @@ import Lobby from './components/Lobby';
 
 const App: React.FC = () => {
   const [roomCode, setRoomCode] = useState<string | null>(null);
+  const [playerName, setPlayerName] = useState<string | null>(null);
 
-  const handleEnterRoom = (code: string) => {
+  const handleEnterRoom = (code: string, name: string) => {
     setRoomCode(code);
+    setPlayerName(name);
   };
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-100">
-      {roomCode ? <Game roomCode={roomCode} /> : <Lobby onEnterRoom={handleEnterRoom} />}
+      {roomCode && playerName ? (
+        <Game roomCode={roomCode} playerName={playerName} />
+      ) : (
+        <Lobby onEnterRoom={handleEnterRoom} />
+      )}
     </div>
   );
 };
