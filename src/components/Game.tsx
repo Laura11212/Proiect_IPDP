@@ -3,9 +3,11 @@ import Board from './Board';
 import { socket } from '../socket';
 import Dice from './Dice';
 
+type PlayerColor = 'red' | 'green' | 'blue' | 'yellow';
+
 type PawnState = {
   id: string;
-  color: 'red' | 'green' | 'blue' | 'yellow';
+  color: PlayerColor;
   pos: number | null;
   base: { row: number; col: number };
   stepsWalked: number; 
@@ -44,15 +46,14 @@ const startIndex: Record<PawnState['color'], number> = {
   blue: 39,   // Iese jos (lângă casa albastră)
 };
 
-const nextTurn = (t: PawnState['color']) =>
-  t === 'red' ? 'green' : t === 'green' ? 'yellow' : t === 'yellow' ? 'blue' : 'red';
-
 const Game: React.FC = () => {
   const [turn, setTurn] = useState<PawnState['color']>('red');
   const [diceValue, setDiceValue] = useState<number | null>(null);
   const [actionPhase, setActionPhase] = useState<'rolling' | 'moving'>('rolling');
   const [extraRollActive, setExtraRollActive] = useState(false);
   const [winner, setWinner] = useState<PawnState['color'] | null>(null);
+  const [myColor, setMyColor] = useState<PawnState['color'] | null>(null);
+  const [activeColors, setActiveColors] = useState<string[]>([]);
   const [pawns, setPawns] = useState<PawnState[]>([
     { id: 'r1', color: 'red', pos: null, base: { row: 2, col: 2 }, stepsWalked: 0 },
     { id: 'r2', color: 'red', pos: null, base: { row: 2, col: 3 }, stepsWalked: 0 },
@@ -90,11 +91,75 @@ const Game: React.FC = () => {
       if (data.winner !== undefined) setWinner(data.winner);
     });
 
+    socket.on('activePlayersUpdate', (colors: string[]) => {
+      console.log("Jucători activi acum:", colors);
+      setActiveColors(colors);
+    });
+
     return () => {
       socket.off('connect');
       socket.off('updateBoard');
+      socket.off('activePlayersUpdate');
     };
   }, []);
+
+  // Paznicul pentru rânduri blocate
+  useEffect(() => {
+    // Ne asigurăm că avem cel puțin un jucător conectat
+    if (activeColors.length > 0) {
+      // Dacă rândul actual aparține unei culori care NU e în lista de jucători
+      if (!activeColors.includes(turn)) {
+        console.log(`Rândul lui ${turn} e blocat. Căutăm următorul jucător valid...`);
+
+        // Luăm ordinea normală a jocului
+        const defaultOrder = ['red', 'green', 'yellow', 'blue'];
+
+        // Găsim prima culoare din ordinea normală care ESTE conectată
+        const firstAvailableColor = defaultOrder.find((color) => activeColors.includes(color));
+
+        // Mutăm tura la el!
+        if (firstAvailableColor) {
+          setTurn(firstAvailableColor as PlayerColor);
+        }
+      }
+    }
+  }, [activeColors, turn]);
+
+  useEffect(() => {
+    // Verificăm dacă suntem conectați
+    socket.on('connect', () => {
+      console.log("CONECTAT! ID-ul meu de socket este:", socket.id);
+    });
+
+    socket.on('playerAssigned', (data: any) => {
+      console.log("3. MESAJ PRIMIT!", data);
+      setMyColor(data.color);
+    });
+
+    const timer = setTimeout(() => {
+      console.log("2. Cererea a fost trimisă");
+      socket.emit('requestColor');
+    }, 200);
+
+    return () => {
+      clearTimeout(timer);
+      socket.off('connect');
+      socket.off('playerAssigned');
+    };
+  }, []);
+
+  const passTurnToNext = (currentTurnColor: string) => {
+    const defaultOrder = ['red', 'green', 'yellow', 'blue'];
+    const currentlyPlaying = defaultOrder.filter((color) => activeColors.includes(color));
+
+    if (currentlyPlaying.length === 0) return;
+
+    const currentIndex = currentlyPlaying.indexOf(currentTurnColor);
+    const nextColor = currentlyPlaying[(currentIndex + 1) % currentlyPlaying.length];
+
+    setTurn(nextColor as PlayerColor);
+    return nextColor as PlayerColor;
+  };
 
   const hasMove = (value: number, color: PawnState['color']) => {
     const possibleMoves = pawns.filter((p) => {
@@ -122,16 +187,15 @@ const Game: React.FC = () => {
       setActionPhase('moving');
 
       // 🔴 NOU: Trimitem zarul adversarului (chiar dacă nu putem muta)
-      socket.emit('makeMove', { diceValue: value, actionPhase: 'moving' });
+      socket.emit('makeMove', { diceValue: value, actionPhase: 'moving', color: myColor });
 
       setTimeout(() => {
-        const nextT = nextTurn(turn);
-        setTurn(nextT);
+        const nextT = passTurnToNext(turn) ?? turn;
         setDiceValue(null);
         setActionPhase('rolling');
         
         // 🔴 NOU: Trimitem faptul că s-a schimbat tura
-        socket.emit('makeMove', { turn: nextT, diceValue: null, actionPhase: 'rolling' });
+        socket.emit('makeMove', { turn: nextT, diceValue: null, actionPhase: 'rolling', color: myColor });
       }, 1000);
       return;
     }
@@ -139,13 +203,22 @@ const Game: React.FC = () => {
     setActionPhase('moving');
     
     // 🔴 NOU: Trimitem zarul și trecem la mutare
-    socket.emit('makeMove', { diceValue: value, actionPhase: 'moving' });
+    socket.emit('makeMove', { diceValue: value, actionPhase: 'moving', color: myColor });
   };
   const onPawnClick = (pawnId: string) => {
     if (actionPhase !== 'moving' || diceValue === null) return;
 
     const clickedPawn = pawns.find((p) => p.id === pawnId);
-    if (!clickedPawn || clickedPawn.color !== turn) return;
+    if (!clickedPawn) return;
+    if (clickedPawn.color !== myColor) {
+      console.log("Nu e pionul tău!");
+      return;
+    }
+    if (turn !== myColor) {
+      console.log("Așteaptă-ți rândul!");
+      return;
+    }
+    if (clickedPawn.color !== turn) return;
 
     // 1. Declarăm variabilele fără să le dăm o valoare inițială obligatorie
     let nextPos: number;
@@ -201,7 +274,7 @@ const Game: React.FC = () => {
     if (hasWon) {
       setWinner(turn);
       // 🔴 NOU: Trimitem tabla finală și câștigătorul!
-      socket.emit('makeMove', { pawns: newPawns, winner: turn });
+      socket.emit('makeMove', { pawns: newPawns, winner: turn, color: myColor });
       return; 
     }
 
@@ -213,11 +286,10 @@ const Game: React.FC = () => {
       nextExtraRoll = true;
     } else {
       nextExtraRoll = false;
-      nextT = nextTurn(turn);
+      nextT = passTurnToNext(turn) ?? turn;
     }
 
     setExtraRollActive(nextExtraRoll);
-    setTurn(nextT);
     setDiceValue(null);
     setActionPhase('rolling');
 
@@ -227,7 +299,8 @@ const Game: React.FC = () => {
       turn: nextT,
       diceValue: null,
       actionPhase: 'rolling',
-      extraRollActive: nextExtraRoll
+      extraRollActive: nextExtraRoll,
+      color: myColor
     });
   };
 
@@ -253,9 +326,12 @@ const Game: React.FC = () => {
       <div className="flex items-center gap-4">
         <div className="text-sm font-medium">Turn: {turn}</div>
         {/* Folosim || în loc de ?? pentru ca null să fie 0 curat */}
-        <Dice value={diceValue || 0} onRoll={onRoll} disabled={actionPhase !== 'rolling'} />
+        <Dice value={diceValue || 0} onRoll={onRoll} disabled={turn !== myColor} />
         <div className="text-xs text-gray-500">Phase: {actionPhase}</div>
       </div>
+      <h3>
+        Ești jucătorul: <span style={{ color: myColor ?? undefined }}>{myColor?.toUpperCase()}</span>
+      </h3>
       <div className="relative">
         {/* Dacă există un câștigător, afișăm acest mesaj */}
         {winner && (
