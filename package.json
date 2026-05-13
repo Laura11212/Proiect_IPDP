@@ -9,6 +9,7 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "framer-motion": "^12.38.0",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
     "socket.io-client": "^4.8.3"

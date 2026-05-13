@@ -1,7 +1,7 @@
 import React from 'react';
 import Cell from './Cell';
 import Pawn from './Pawn';
-
+import { motion } from 'framer-motion';
 type PawnRender = {
   id: string;
   color: 'red' | 'green' | 'blue' | 'yellow';
@@ -15,14 +15,10 @@ type BoardProps = {
 };
 
 const safeStarMap: Record<string, string> = {
-  '6-1': 'text-red-500',
-  '1-8': 'text-green-500',
-  '8-13': 'text-yellow-500',
-  '13-6': 'text-blue-500',
-  '2-6': 'text-gray-400',
-  '6-12': 'text-gray-400',
-  '12-8': 'text-gray-400',
-  '8-2': 'text-gray-400',
+  '6-1': 'text-red-500', '1-8': 'text-green-500',
+  '8-13': 'text-yellow-500', '13-6': 'text-blue-500',
+  '2-6': 'text-gray-400', '6-12': 'text-gray-400',
+  '12-8': 'text-gray-400', '8-2': 'text-gray-400',
 };
 
 const arrowMap: Record<string, { colorClass: string; rotation: string }> = {
@@ -39,12 +35,7 @@ const Star = ({ colorClass }: { colorClass: string }) => (
 );
 
 const Arrow = ({ colorClass, rotation }: { colorClass: string; rotation: string }) => (
-  <svg 
-    className={`w-3/4 h-3/4 opacity-90 ${colorClass}`} 
-    style={{ transform: `rotate(${rotation})` }} 
-    viewBox="0 0 24 24" 
-    fill="currentColor"
-  >
+  <svg className={`w-3/4 h-3/4 opacity-90 ${colorClass}`} style={{ transform: `rotate(${rotation})` }} viewBox="0 0 24 24" fill="currentColor">
     <path d="M12 6.5l-9 9 2.5 2.5L12 11.5l6.5 6.5 2.5-2.5-9-9z" />
   </svg>
 );
@@ -83,63 +74,146 @@ const Board: React.FC<BoardProps> = ({ pawns, onPawnClick }) => {
     if (color === 'blue') return 'bg-blue-600';
     return 'bg-yellow-500';
   };
+const CenterTriangles = () => {
+  return (
+    <div className="absolute inset-0 w-full h-full">
+      {/* Triunghiul ROȘU (Stânga) */}
+      <div 
+        className="absolute inset-0 bg-red-500" 
+        style={{ clipPath: 'polygon(0% 0%, 50% 50%, 0% 100%)' }}
+      ></div>
+      {/* Triunghiul VERDE (Sus) */}
+      <div 
+        className="absolute inset-0 bg-green-500" 
+        style={{ clipPath: 'polygon(0% 0%, 100% 0%, 50% 50%)' }}
+      ></div>
+      {/* Triunghiul GALBEN (Dreapta) */}
+      <div 
+        className="absolute inset-0 bg-yellow-400" 
+        style={{ clipPath: 'polygon(100% 0%, 100% 100%, 50% 50%)' }}
+      ></div>
+      {/* Triunghiul ALBASTRU (Jos) */}
+      <div 
+        className="absolute inset-0 bg-blue-500" 
+        style={{ clipPath: 'polygon(0% 100%, 100% 100%, 50% 50%)' }}
+      ></div>
+      {/* Contur pentru X-ul din mijloc */}
+      <div className="absolute inset-0 border border-gray-400 pointer-events-none" style={{ clipPath: 'polygon(0% 0%, 100% 100%, 100% 0%, 0% 100%)', border: '1px solid rgba(0,0,0,0.1)' }}></div>
+    </div>
+  );
+};
+const cells = Array.from({ length: gridSize * gridSize }, (_, index) => {
+  const row = Math.floor(index / gridSize);
+  const col = index % gridSize;
+  const isExactCenter = row === 7 && col === 7;
+  const starClass = safeStarMap[`${row}-${col}`];
+  const arrow = arrowMap[`${row}-${col}`];
 
-  const cells = Array.from({ length: gridSize * gridSize }, (_, index) => {
-    const row = Math.floor(index / gridSize);
-    const col = index % gridSize;
-    const inCell = pawns.filter((p) => p.row === row && p.col === col);
-    const starClass = safeStarMap[`${row}-${col}`];
-    const arrow = arrowMap[`${row}-${col}`];
+const isPawnSlot = (row: number, col: number): string | null => {
+  if (isInRange(row, 1, 4) && isInRange(col, 1, 4)) return 'red';
+  if (isInRange(row, 1, 4) && isInRange(col, 10, 13)) return 'green';
+  if (isInRange(row, 10, 13) && isInRange(col, 1, 4)) return 'blue';
+  if (isInRange(row, 10, 13) && isInRange(col, 10, 13)) return 'yellow';
+  return null;
+};
+  return (
+     <Cell key={`${row}-${col}`} className={cellClass(row, col)} size={cellSize}>
+    <div className="relative w-full h-full flex items-center justify-center">
+      
+      {isExactCenter && (
+        <div className="absolute z-0" style={{ width: cellSize * 3, height: cellSize * 3, left: -cellSize, top: -cellSize }}>
+          <CenterTriangles />
+        </div>
+      )}
+
+      {starClass && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <Star colorClass={starClass} />
+        </div>
+      )}
+
+      {arrow && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <Arrow colorClass={arrow.colorClass} rotation={arrow.rotation} />
+        </div>
+      )}
+
     
-    // Verificăm câți pioni sunt în această căsuță
-    const isMulti = inCell.length > 1;
+
+    </div>
+  </Cell>
+);
+});
+  return (
+    <div className="relative border-2 border-gray-300 shadow-lg rounded overflow-hidden">
+      
+      {/* STRATUL 1: Tabla de joc (statică) */}
+      <div
+        className="grid gap-0 bg-white"
+        style={{
+          gridTemplateColumns: `repeat(${gridSize}, ${cellSize}px)`,
+          width: gridSize * cellSize,
+          height: gridSize * cellSize,
+        }}
+      >
+        {cells}
+      </div>
+
+      {/* STRATUL 2: Pionii Animați (Absoluți) */}
+      <div className="absolute inset-0 pointer-events-none">
+  {pawns.map((p) => {
+    const pawnsInSameCell = pawns.filter((other) => other.row === p.row && other.col === p.col);
+    const isMulti = pawnsInSameCell.length > 1;
+    const indexInCell = pawnsInSameCell.findIndex((other) => other.id === p.id);
+
+    const shift = cellSize / 4;
+    const offsets = [
+      { x: -shift, y: -shift },
+      { x: shift,  y: -shift },
+      { x: -shift, y: shift  },
+      { x: shift,  y: shift  },
+    ];
+    const { x: offsetX, y: offsetY } = isMulti ? offsets[indexInCell] : { x: 0, y: 0 };
+
+    const targetX = p.col * cellSize + cellSize / 2 + offsetX;
+    const targetY = p.row * cellSize + cellSize / 2 + offsetY;
 
     return (
-      <Cell key={`${row}-${col}`} className={cellClass(row, col)} size={cellSize}>
-        <div className="relative w-full h-full flex items-center justify-center">
-          {starClass && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <Star colorClass={starClass} />
-            </div>
-          )}
-          {arrow && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <Arrow colorClass={arrow.colorClass} rotation={arrow.rotation} />
-            </div>
-          )}
-          
-          {/* AICI ESTE MAGIA: Dacă sunt mai mulți pioni, aplicăm un grid 2x2. Altfel, îl ținem pe centru */}
-          <div 
-            className={`relative z-10 w-full h-full ${
-              isMulti 
-                ? 'grid grid-cols-2 grid-rows-2 place-items-center p-0.5' 
-                : 'flex items-center justify-center'
-            }`}
-          >
-            {inCell.map((p) => (
-              <Pawn
-                key={p.id}
-                colorClass={colorToClass(p.color)}
-                onClick={() => onPawnClick?.(p.id)}
-                // Îi transmitem dimensiunea: w-4 (aprox 16px) pentru multi, w-7 (aprox 28px) normal
-                sizeClass={isMulti ? 'w-4 h-4' : 'w-7 h-7'} 
-              />
-            ))}
-          </div>
+      <motion.div
+        key={p.id}
+        className="absolute pointer-events-auto"
+        style={{
+          width: cellSize,
+          height: cellSize,
+          x: -cellSize / 2,  // offset pentru centrare
+          y: -cellSize / 2,
+          originX: 0.5,
+          originY: 0.5,
+        }}
+        animate={{
+          left: targetX,
+          top: targetY,
+          scale: isMulti ? 0.6 : 1,
+        }}
+        transition={{
+          type: 'spring',
+          stiffness: 300,
+          damping: 25,
+          duration: 0.35,
+        }}
+      >
+        <div className="w-full h-full flex items-center justify-center">
+          <Pawn
+            colorClass={colorToClass(p.color)}
+            onClick={() => onPawnClick?.(p.id)}
+            sizeClass="w-7 h-7"
+          />
         </div>
-      </Cell>
+      </motion.div>
     );
-  });
-
-  return (
-    <div
-      className="grid gap-0 shadow-lg border-2 border-gray-300 rounded overflow-hidden"
-      style={{
-        gridTemplateColumns: `repeat(${gridSize}, ${cellSize}px)`,
-        width: gridSize * cellSize,
-      }}
-    >
-      {cells}
+  })}
+</div>
+      
     </div>
   );
 };
