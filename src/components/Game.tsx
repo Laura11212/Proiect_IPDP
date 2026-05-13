@@ -13,6 +13,10 @@ type PawnState = {
   stepsWalked: number; 
 };
 
+type GameProps = {
+  roomCode: string;
+};
+
 const track = [
   { row: 6, col: 1 }, { row: 6, col: 2 }, { row: 6, col: 3 }, { row: 6, col: 4 }, { row: 6, col: 5 },
   { row: 5, col: 6 }, { row: 4, col: 6 }, { row: 3, col: 6 }, { row: 2, col: 6 }, { row: 1, col: 6 },
@@ -46,7 +50,7 @@ const startIndex: Record<PawnState['color'], number> = {
   blue: 39,   // Iese jos (lângă casa albastră)
 };
 
-const Game: React.FC = () => {
+const Game: React.FC<GameProps> = ({ roomCode }) => {
   const [turn, setTurn] = useState<PawnState['color']>('red');
   const [diceValue, setDiceValue] = useState<number | null>(null);
   const [actionPhase, setActionPhase] = useState<'rolling' | 'moving'>('rolling');
@@ -73,6 +77,10 @@ const Game: React.FC = () => {
     { id: 'y4', color: 'yellow', pos: null, base: { row: 12, col: 12 }, stepsWalked: 0 },
   ]);
 
+
+  useEffect(() => {
+    socket.emit('joinRoom', roomCode);
+  }, [roomCode]);
 
   useEffect(() => {
     socket.on('connect', () => {
@@ -138,7 +146,7 @@ const Game: React.FC = () => {
 
     const timer = setTimeout(() => {
       console.log("2. Cererea a fost trimisă");
-      socket.emit('requestColor');
+      socket.emit('requestColor', { roomCode });
     }, 200);
 
     return () => {
@@ -187,7 +195,7 @@ const Game: React.FC = () => {
       setActionPhase('moving');
 
       // 🔴 NOU: Trimitem zarul adversarului (chiar dacă nu putem muta)
-      socket.emit('makeMove', { diceValue: value, actionPhase: 'moving', color: myColor });
+      socket.emit('makeMove', { diceValue: value, actionPhase: 'moving', color: myColor, roomCode });
 
       setTimeout(() => {
         const nextT = passTurnToNext(turn) ?? turn;
@@ -195,7 +203,7 @@ const Game: React.FC = () => {
         setActionPhase('rolling');
         
         // 🔴 NOU: Trimitem faptul că s-a schimbat tura
-        socket.emit('makeMove', { turn: nextT, diceValue: null, actionPhase: 'rolling', color: myColor });
+        socket.emit('makeMove', { turn: nextT, diceValue: null, actionPhase: 'rolling', color: myColor, roomCode });
       }, 1000);
       return;
     }
@@ -203,7 +211,7 @@ const Game: React.FC = () => {
     setActionPhase('moving');
     
     // 🔴 NOU: Trimitem zarul și trecem la mutare
-    socket.emit('makeMove', { diceValue: value, actionPhase: 'moving', color: myColor });
+    socket.emit('makeMove', { diceValue: value, actionPhase: 'moving', color: myColor, roomCode });
   };
   const onPawnClick = (pawnId: string) => {
     if (actionPhase !== 'moving' || diceValue === null) return;
@@ -274,7 +282,7 @@ const Game: React.FC = () => {
     if (hasWon) {
       setWinner(turn);
       // 🔴 NOU: Trimitem tabla finală și câștigătorul!
-      socket.emit('makeMove', { pawns: newPawns, winner: turn, color: myColor });
+      socket.emit('makeMove', { pawns: newPawns, winner: turn, color: myColor, roomCode });
       return; 
     }
 
@@ -312,7 +320,8 @@ const Game: React.FC = () => {
       diceValue: null,
       actionPhase: 'rolling',
       extraRollActive: nextExtraRoll,
-      color: myColor
+      color: myColor,
+      roomCode
     });
   };
 
@@ -340,6 +349,9 @@ const Game: React.FC = () => {
         {/* Folosim || în loc de ?? pentru ca null să fie 0 curat */}
         <Dice value={diceValue || 0} onRoll={onRoll} disabled={turn !== myColor} />
         <div className="text-xs text-gray-500">Phase: {actionPhase}</div>
+      </div>
+      <div className="text-sm text-gray-700">
+        Codul camerei tale este: <span className="font-semibold">{roomCode}</span>
       </div>
       <h3>
         Ești jucătorul: <span style={{ color: myColor ?? undefined }}>{myColor?.toUpperCase()}</span>
