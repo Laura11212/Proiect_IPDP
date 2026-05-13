@@ -72,6 +72,8 @@ const Game: React.FC = () => {
     { id: 'y3', color: 'yellow', pos: null, base: { row: 12, col: 11 }, stepsWalked: 0 },
     { id: 'y4', color: 'yellow', pos: null, base: { row: 12, col: 12 }, stepsWalked: 0 },
   ]);
+  const [visualPawns, setVisualPawns] = useState<PawnState[]>([]); // ← ADAUGĂ
+  const [isAnimating, setIsAnimating] = useState(false); 
 
 
   useEffect(() => {
@@ -148,6 +150,12 @@ const Game: React.FC = () => {
     };
   }, []);
 
+
+useEffect(() => {
+  setVisualPawns(pawns);
+}, []);
+
+
   const passTurnToNext = (currentTurnColor: string) => {
     const defaultOrder = ['red', 'green', 'yellow', 'blue'];
     const currentlyPlaying = defaultOrder.filter((color) => activeColors.includes(color));
@@ -172,7 +180,37 @@ const Game: React.FC = () => {
     console.log(`[Debug] Jucător: ${color}, Zar: ${value}, Mutări posibile: ${possibleMoves.length}`);
     return possibleMoves.length > 0;
   };
+const animateSteps = async (
+  pawnId: string,
+  fromPos: number | null,
+  toPos: number,        // poziția finală pe track (index 0-51)
+  totalSteps: number,
+  color: PlayerColor
+): Promise<void> => {
+  setIsAnimating(true);
+  const STEP_DELAY = 180; // ms între fiecare casută
 
+  if (fromPos === null) {
+    // Pionul iese din bază direct la startIndex — un singur pas
+    setVisualPawns(prev =>
+      prev.map(p => p.id === pawnId ? { ...p, pos: startIndex[color] } : p)
+    );
+    await new Promise(res => setTimeout(res, STEP_DELAY));
+  } else {
+    // Mergem pas cu pas pe track
+    for (let step = 1; step <= totalSteps; step++) {
+      const intermediatePos = (fromPos + step) % track.length;
+
+      setVisualPawns(prev =>
+        prev.map(p => p.id === pawnId ? { ...p, pos: intermediatePos } : p)
+      );
+
+      await new Promise(res => setTimeout(res, STEP_DELAY));
+    }
+  }
+
+  setIsAnimating(false);
+};
   const onRoll = () => {
     if (winner) return; 
     if (actionPhase !== 'rolling') return;
@@ -205,67 +243,66 @@ const Game: React.FC = () => {
     // 🔴 NOU: Trimitem zarul și trecem la mutare
     socket.emit('makeMove', { diceValue: value, actionPhase: 'moving', color: myColor });
   };
-  const onPawnClick = (pawnId: string) => {
-    if (actionPhase !== 'moving' || diceValue === null) return;
+ const onPawnClick = async (pawnId: string) => {
+  if (isAnimating) return; // ← BLOCHEAZĂ click în timpul animației
+  if (actionPhase !== 'moving' || diceValue === null) return;
 
-    const clickedPawn = pawns.find((p) => p.id === pawnId);
-    if (!clickedPawn) return;
-    if (clickedPawn.color !== myColor) {
-      console.log("Nu e pionul tău!");
-      return;
-    }
-    if (turn !== myColor) {
-      console.log("Așteaptă-ți rândul!");
-      return;
-    }
-    if (clickedPawn.color !== turn) return;
+  const clickedPawn = pawns.find((p) => p.id === pawnId);
+  if (!clickedPawn) return;
+  if (clickedPawn.color !== myColor) return;
+  if (turn !== myColor) return;
+  if (clickedPawn.color !== turn) return;
 
-    // 1. Declarăm variabilele fără să le dăm o valoare inițială obligatorie
-    let nextPos: number;
-    let nextSteps: number;
-    let canMove = false;
+  let nextPos: number;
+  let nextSteps: number;
 
-    if (clickedPawn.pos === null) {
-      if (diceValue === 6) {
-        canMove = true;
-        nextPos = startIndex[clickedPawn.color];
-        nextSteps = 0;
-      } else {
-        return; // Nu poate ieși din casă dacă nu e 6
-      }
+  if (clickedPawn.pos === null) {
+    if (diceValue === 6) {
+      nextPos = startIndex[clickedPawn.color];
+      nextSteps = 0;
     } else {
-      const totalStepsAfterMove = clickedPawn.stepsWalked + diceValue;
-
-      if (totalStepsAfterMove <= 56) {
-        canMove = true;
-        nextSteps = totalStepsAfterMove;
-
-        if (totalStepsAfterMove <= 50) {
-          nextPos = (clickedPawn.pos + diceValue) % track.length;
-        } else {
-          nextPos = 100 + (totalStepsAfterMove - 51);
-        }
-      } else {
-        return; // Zarul e prea mare pentru a intra în casă
-      }
+      return;
     }
+  } else {
+    const totalStepsAfterMove = clickedPawn.stepsWalked + diceValue;
+    if (totalStepsAfterMove <= 56) {
+      nextSteps = totalStepsAfterMove;
+      nextPos = totalStepsAfterMove <= 50
+        ? (clickedPawn.pos + diceValue) % track.length
+        : 100 + (totalStepsAfterMove - 51);
+    } else {
+      return;
+    }
+  }
+
+  // ↓ ANIMEAZĂ MAI ÎNTÂI (vizual, pas cu pas)
+  await animateSteps(
+    pawnId,
+    clickedPawn.pos,
+    nextPos,
+    diceValue,
+    clickedPawn.color
+  );
+
+  // ↓ ABIA ACUM actualizezi starea reală
+  const safeSpaceIndices = [0, 8, 13, 21, 26, 34, 39, 47];
+  const newPawns = pawns.map((p) => {
+    if (p.id === pawnId) return { ...p, pos: nextPos, stepsWalked: nextSteps };
+    if (p.color !== turn && p.pos === nextPos && nextPos < 100) {
+      if (safeSpaceIndices.includes(nextPos)) return p;
+      return { ...p, pos: null, stepsWalked: 0 };
+    }
+    return p;
+  });
+
+  setPawns(newPawns);
+  setVisualPawns(newPawns);
 
     // Aici, TypeScript știe deja că dacă am ajuns sub acest punct, 
     // nextPos și nextSteps AU PRIMIT o valoare de tip number.
     
     // 1. Calculăm noua listă de pioni
-    const safeSpaceIndices = [0, 8, 13, 21, 26, 34, 39, 47];
-    const newPawns = pawns.map((p) => {
-      if (p.id === pawnId) return { ...p, pos: nextPos, stepsWalked: nextSteps };
-      if (p.color !== turn && p.pos === nextPos && nextPos < 100) {
-        if (safeSpaceIndices.includes(nextPos)) return p;
-        return { ...p, pos: null, stepsWalked: 0 };
-      }
-      return p;
-    });
-
-    // 2. Salvăm noua listă de pioni
-    setPawns(newPawns);
+    
 
     // 3. VERIFICARE VICTORIE 🏆
     const playerPawns = newPawns.filter((p) => p.color === turn);
@@ -316,10 +353,11 @@ const Game: React.FC = () => {
     });
   };
 
-  const renderPawns = pawns.map((p) => {
-    if (p.pos === null) {
-      return { id: p.id, color: p.color, row: p.base.row, col: p.base.col };
-    }
+ const renderPawns = visualPawns.map((p) => { // ← visualPawns, nu pawns
+  if (p.pos === null) {
+    return { id: p.id, color: p.color, row: p.base.row, col: p.base.col };
+  }
+  
 
     if (p.pos >= 100) {
       // Dacă e în casă, luăm coordonatele din homeLanes
