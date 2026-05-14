@@ -15,6 +15,7 @@ type PawnState = {
 
 type GameProps = {
   roomCode: string;
+  playerName: string;
 };
 
 const track = [
@@ -50,14 +51,14 @@ const startIndex: Record<PawnState['color'], number> = {
   blue: 39,   // Iese jos (lângă casa albastră)
 };
 
-const Game: React.FC<GameProps> = ({ roomCode }) => {
+const Game: React.FC<GameProps> = ({ roomCode, playerName }) => {
   const [turn, setTurn] = useState<PawnState['color']>('red');
   const [diceValue, setDiceValue] = useState<number | null>(null);
   const [actionPhase, setActionPhase] = useState<'rolling' | 'moving'>('rolling');
   const [extraRollActive, setExtraRollActive] = useState(false);
   const [winner, setWinner] = useState<PawnState['color'] | null>(null);
   const [myColor, setMyColor] = useState<PawnState['color'] | null>(null);
-  const [activeColors, setActiveColors] = useState<string[]>([]);
+  const [activePlayers, setActivePlayers] = useState<{color: string, name: string}[]>([]);
   const [pawns, setPawns] = useState<PawnState[]>([
     { id: 'r1', color: 'red', pos: null, base: { row: 2, col: 2 }, stepsWalked: 0 },
     { id: 'r2', color: 'red', pos: null, base: { row: 2, col: 3 }, stepsWalked: 0 },
@@ -101,11 +102,18 @@ const Game: React.FC<GameProps> = ({ roomCode }) => {
       if (data.winner !== undefined) setWinner(data.winner);
     });
 
-    socket.on('activePlayersUpdate', (colors: string[]) => {
-      console.log("Jucători activi acum:", colors);
-      setActiveColors(colors);
+   socket.on('activePlayersUpdate', (players: any) => {
+      console.log("!!! DATE DE LA SERVER:", players);
+      
+      // Dacă primim string-uri în loc de obiecte, le transformăm noi forțat aici
+      // ca să nu se mai blocheze jocul până repari serverul
+      const fixedPlayers = players.map((p: any) => 
+        typeof p === 'string' ? { color: p, name: 'Jucător' } : p
+      );
+      
+      setActivePlayers(fixedPlayers);
     });
-
+    
     return () => {
       socket.off('connect');
       socket.off('updateBoard');
@@ -113,27 +121,23 @@ const Game: React.FC<GameProps> = ({ roomCode }) => {
     };
   }, []);
 
-  // Paznicul pentru rânduri blocate
+ // Paznicul pentru rânduri blocate
   useEffect(() => {
-    // Ne asigurăm că avem cel puțin un jucător conectat
-    if (activeColors.length > 0) {
-      // Dacă rândul actual aparține unei culori care NU e în lista de jucători
-      if (!activeColors.includes(turn)) {
+    if (activePlayers.length > 0) {
+      // Extragem doar culorile din lista de obiecte pentru a le verifica ușor
+      const activeColorStrings = activePlayers.map(p => p.color);
+      
+      if (!activeColorStrings.includes(turn)) {
         console.log(`Rândul lui ${turn} e blocat. Căutăm următorul jucător valid...`);
-
-        // Luăm ordinea normală a jocului
         const defaultOrder = ['red', 'green', 'yellow', 'blue'];
+        const firstAvailableColor = defaultOrder.find((color) => activeColorStrings.includes(color));
 
-        // Găsim prima culoare din ordinea normală care ESTE conectată
-        const firstAvailableColor = defaultOrder.find((color) => activeColors.includes(color));
-
-        // Mutăm tura la el!
         if (firstAvailableColor) {
           setTurn(firstAvailableColor as PlayerColor);
         }
       }
     }
-  }, [activeColors, turn]);
+  }, [activePlayers, turn]);
 
   useEffect(() => {
     // Verificăm dacă suntem conectați
@@ -148,7 +152,7 @@ const Game: React.FC<GameProps> = ({ roomCode }) => {
 
     const timer = setTimeout(() => {
       console.log("2. Cererea a fost trimisă");
-      socket.emit('requestColor', { roomCode });
+      socket.emit('requestColor', { roomCode, playerName });
     }, 200);
 
     return () => {
@@ -164,12 +168,11 @@ useEffect(() => {
 }, [pawns]);
 
 
-  const passTurnToNext = (currentTurnColor: string) => {
+ const passTurnToNext = (currentTurnColor: string) => {
     const defaultOrder = ['red', 'green', 'yellow', 'blue'];
-    let currentlyPlaying = defaultOrder.filter((color) => activeColors.includes(color));
+    const activeColorStrings = activePlayers.map(p => p.color);
+    let currentlyPlaying = defaultOrder.filter((color) => activeColorStrings.includes(color));
 
-    // 🛡️ PLASA DE SIGURANȚĂ: Dacă serverul nu ne-a zis cine e în cameră,
-    // presupunem automat că joacă Roșu și Verde ca să nu blocăm jocul!
     if (currentlyPlaying.length === 0) {
       currentlyPlaying = ['red', 'green'];
     }
@@ -394,6 +397,23 @@ const animateSteps = async (
       </div>
       <div className="text-sm text-gray-700">
         Codul camerei tale este: <span className="font-semibold">{roomCode}</span>
+      </div>
+      <div className="mt-4">
+          <h4 className="text-sm font-bold">Jucători în cameră:</h4>
+          <ul className="flex gap-4">
+  {activePlayers.map((player, index) => (
+    <li key={index} className="text-xs p-1 rounded border" style={{ borderColor: player.color || 'black' }}>
+      <span className="font-bold text-lg" style={{ color: player.color || 'black' }}>
+        ●
+      </span> 
+      {player.name || "Eroare Nume"} 
+      {/* ^ Dacă vezi "Eroare Nume", înseamnă că serverul nu trimite obiectul corect */}
+    </li>
+  ))}
+</ul>
+        </div>
+      <div className="text-sm text-gray-700">
+        Numele tău: <span className="font-semibold">{playerName}</span>
       </div>
       <h3>
         Ești jucătorul: <span style={{ color: myColor ?? undefined }}>{myColor?.toUpperCase()}</span>
