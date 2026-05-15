@@ -5,6 +5,8 @@ import Dice from './Dice';
 
 type PlayerColor = 'red' | 'green' | 'blue' | 'yellow';
 
+type ChatMessage = { playerName: string; color: string; text: string; };
+
 type PawnState = {
   id: string;
   color: PlayerColor;
@@ -59,6 +61,8 @@ const Game: React.FC<GameProps> = ({ roomCode, playerName }) => {
   const [winner, setWinner] = useState<PawnState['color'] | null>(null);
   const [myColor, setMyColor] = useState<PawnState['color'] | null>(null);
   const [activePlayers, setActivePlayers] = useState<{color: string, name: string}[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [currentMessage, setCurrentMessage] = useState('');
   const [pawns, setPawns] = useState<PawnState[]>([
     { id: 'r1', color: 'red', pos: null, base: { row: 2, col: 2 }, stepsWalked: 0 },
     { id: 'r2', color: 'red', pos: null, base: { row: 2, col: 3 }, stepsWalked: 0 },
@@ -102,7 +106,7 @@ const Game: React.FC<GameProps> = ({ roomCode, playerName }) => {
       if (data.winner !== undefined) setWinner(data.winner);
     });
 
-   socket.on('activePlayersUpdate', (players: any) => {
+    socket.on('activePlayersUpdate', (players: any) => {
       console.log("!!! DATE DE LA SERVER:", players);
       
       // Dacă primim string-uri în loc de obiecte, le transformăm noi forțat aici
@@ -113,11 +117,18 @@ const Game: React.FC<GameProps> = ({ roomCode, playerName }) => {
       
       setActivePlayers(fixedPlayers);
     });
+
+    socket.on('receiveMessage', (message: ChatMessage) => {
+      // BECULEȚUL NOSTRU:
+      console.log("📥 [CHAT PRIMIT ÎNAPOI DE LA SERVER]:", message);
+      setMessages((prev) => [...prev, message]);
+    });
     
     return () => {
       socket.off('connect');
       socket.off('updateBoard');
       socket.off('activePlayersUpdate');
+      socket.off('receiveMessage');
     };
   }, []);
 
@@ -258,6 +269,29 @@ const animateSteps = async (
     // 🔴 NOU: Trimitem zarul și trecem la mutare
     socket.emit('makeMove', { diceValue: value, actionPhase: 'moving', color: myColor, roomCode });
   };
+
+  const handleSendMessage = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!currentMessage) return;
+
+    // ALARMA: Să vedem exact ce pleacă spre server
+    console.log("🚨 [DEBUG FRONTEND] Mă pregătesc să trimit:", {
+      roomCode,
+      playerName,
+      color: myColor,
+      text: currentMessage
+    });
+
+    socket.emit('sendMessage', {
+      roomCode,
+      playerName,
+      color: myColor || 'gray',
+      text: currentMessage
+    });
+
+    setCurrentMessage('');
+  };
+
  const onPawnClick = async (pawnId: string) => {
   if (isAnimating) return; // ← BLOCHEAZĂ click în timpul animației
   if (actionPhase !== 'moving' || diceValue === null) return;
@@ -388,57 +422,84 @@ const animateSteps = async (
   });
 
   return (
-    <div className="flex flex-col items-center gap-4">
-      <div className="flex items-center gap-4">
-        <div className="text-sm font-medium">Turn: {turn}</div>
-        {/* Folosim || în loc de ?? pentru ca null să fie 0 curat */}
-        <Dice value={diceValue || 0} onRoll={onRoll} disabled={turn !== myColor} />
-        <div className="text-xs text-gray-500">Phase: {actionPhase}</div>
-      </div>
-      <div className="text-sm text-gray-700">
-        Codul camerei tale este: <span className="font-semibold">{roomCode}</span>
-      </div>
-      <div className="mt-4">
+    <div className="flex flex-col md:flex-row items-start justify-center gap-8 w-full max-w-6xl mx-auto p-4">
+      <div className="flex flex-col items-center gap-4 w-full md:w-auto">
+        <div className="flex items-center gap-4">
+          <div className="text-sm font-medium">Turn: {turn}</div>
+          {/* Folosim || în loc de ?? pentru ca null să fie 0 curat */}
+          <Dice value={diceValue || 0} onRoll={onRoll} disabled={turn !== myColor} />
+          <div className="text-xs text-gray-500">Phase: {actionPhase}</div>
+        </div>
+        <div className="text-sm text-gray-700">
+          Codul camerei tale este: <span className="font-semibold">{roomCode}</span>
+        </div>
+        <div className="mt-4">
           <h4 className="text-sm font-bold">Jucători în cameră:</h4>
           <ul className="flex gap-4">
-  {activePlayers.map((player, index) => (
-    <li key={index} className="text-xs p-1 rounded border" style={{ borderColor: player.color || 'black' }}>
-      <span className="font-bold text-lg" style={{ color: player.color || 'black' }}>
-        ●
-      </span> 
-      {player.name || "Eroare Nume"} 
-      {/* ^ Dacă vezi "Eroare Nume", înseamnă că serverul nu trimite obiectul corect */}
-    </li>
-  ))}
-</ul>
+            {activePlayers.map((player, index) => (
+              <li key={index} className="text-xs p-1 rounded border" style={{ borderColor: player.color || 'black' }}>
+                <span className="font-bold text-lg" style={{ color: player.color || 'black' }}>
+                  ●
+                </span> 
+                {player.name || "Eroare Nume"} 
+                {/* ^ Dacă vezi "Eroare Nume", înseamnă că serverul nu trimite obiectul corect */}
+              </li>
+            ))}
+          </ul>
         </div>
-      <div className="text-sm text-gray-700">
-        Numele tău: <span className="font-semibold">{playerName}</span>
-      </div>
-      <h3>
-        Ești jucătorul: <span style={{ color: myColor ?? undefined }}>{myColor?.toUpperCase()}</span>
-      </h3>
-      <div className="relative">
-        {/* Dacă există un câștigător, afișăm acest mesaj */}
-        {winner && (
-          <div className="absolute z-50 bg-black/80 inset-0 flex flex-col items-center justify-center rounded-lg">
-            <h1
-              className="text-6xl font-bold uppercase text-white mb-4 drop-shadow-lg"
-              style={{ color: winner }}
-            >
-              {winner} WINS!
-            </h1>
-            <button
-              onClick={() => window.location.reload()}
-              className="px-6 py-3 bg-white text-gray-900 font-bold rounded-full hover:bg-gray-200 transition-colors"
-            >
-              Joacă din nou
-            </button>
-          </div>
-        )}
+        <div className="text-sm text-gray-700">
+          Numele tău: <span className="font-semibold">{playerName}</span>
+        </div>
+        <h3>
+          Ești jucătorul: <span style={{ color: myColor ?? undefined }}>{myColor?.toUpperCase()}</span>
+        </h3>
+        <div className="relative">
+          {/* Dacă există un câștigător, afișăm acest mesaj */}
+          {winner && (
+            <div className="absolute z-50 bg-black/80 inset-0 flex flex-col items-center justify-center rounded-lg">
+              <h1
+                className="text-6xl font-bold uppercase text-white mb-4 drop-shadow-lg"
+                style={{ color: winner }}
+              >
+                {winner} WINS!
+              </h1>
+              <button
+                onClick={() => window.location.reload()}
+                className="px-6 py-3 bg-white text-gray-900 font-bold rounded-full hover:bg-gray-200 transition-colors"
+              >
+                Joacă din nou
+              </button>
+            </div>
+          )}
 
-        {/* Aici ai tu deja componenta Board */}
-        <Board pawns={renderPawns} onPawnClick={onPawnClick} />
+          {/* Aici ai tu deja componenta Board */}
+          <Board pawns={renderPawns} onPawnClick={onPawnClick} />
+        </div>
+      </div>
+
+      <div className="w-full md:w-80 lg:w-96">
+        <div className="text-sm font-bold mb-2">Chat</div>
+        <div className="h-96 overflow-y-auto border rounded-md p-3 space-y-2">
+          {messages.map((msg, index) => (
+            <div key={index} className="text-sm">
+              <span style={{ color: msg.color }}>{msg.playerName}:</span> {msg.text}
+            </div>
+          ))}
+        </div>
+        <form onSubmit={handleSendMessage} className="mt-2 flex gap-2">
+          <input
+            value={currentMessage}
+            onChange={(e) => setCurrentMessage(e.target.value)}
+            placeholder="Scrie un mesaj..."
+            className="flex-1 border rounded-md px-3 py-2 text-sm"
+          />
+          <button
+            type="submit"
+            className="px-3 py-2 text-sm font-semibold bg-gray-900 text-white rounded-md"
+          >
+            Trimite
+          </button>
+        </form>
       </div>
     </div>
   );
